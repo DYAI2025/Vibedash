@@ -1,0 +1,5 @@
+{
+  "name": "Nexus - Project Context System",
+  "description": "A centralized project dashboard with data pipeline and LLM support for interpreting project knowledge from multiple sources.",
+  "requestFramePermissions": []
+}
