@@ -11,6 +11,8 @@ import { DataSources } from './pages/DataSources';
 import { Insights } from './pages/Insights';
 import { Integrations } from './pages/Integrations';
 import { Terminal } from './pages/Terminal';
+import { Logs } from './pages/Logs';
+import { Templates } from './pages/Templates';
 
 export default function App() {
   return (
@@ -23,6 +25,8 @@ export default function App() {
             <Route path="insights" element={<Insights />} />
             <Route path="terminal" element={<Terminal />} />
             <Route path="integrations" element={<Integrations />} />
+            <Route path="logs" element={<Logs />} />
+            <Route path="templates" element={<Templates />} />
           </Route>
         </Routes>
       </BrowserRouter>

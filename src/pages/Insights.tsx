@@ -4,14 +4,18 @@ import { generateProjectInsights, AIProvider } from '@/src/lib/ai';
 import { Card } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
-import { Send, Bot, User, Loader2, Search, X } from 'lucide-react';
+import { Textarea } from '@/src/components/ui/textarea';
+import { Send, Bot, User, Loader2, Search, X, Settings, Eye, EyeOff, FileText, Save, FileEdit, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  provider?: string;
 }
 
 interface SearchResult {
@@ -20,8 +24,51 @@ interface SearchResult {
   match: string;
 }
 
+const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
+  const match = /language-(\w+)/.exec(className || '');
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!inline && match) {
+    return (
+      <div className="relative group rounded-md overflow-hidden my-4 border border-zinc-700">
+        <div className="flex items-center justify-between px-4 py-1.5 bg-zinc-800 text-zinc-400 text-xs font-mono">
+          <span>{match[1]}</span>
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 hover:text-zinc-200 transition-colors"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copied ? 'Copied!' : 'Copy'}</span>
+          </button>
+        </div>
+        <SyntaxHighlighter
+          style={vscDarkPlus}
+          language={match[1]}
+          PreTag="div"
+          customStyle={{ margin: 0, borderRadius: '0 0 0.375rem 0.375rem', background: '#1e1e1e' }}
+          {...props}
+        >
+          {String(children).replace(/\n$/, '')}
+        </SyntaxHighlighter>
+      </div>
+    );
+  }
+
+  return (
+    <code className={`${className} bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md text-sm`} {...props}>
+      {children}
+    </code>
+  );
+};
+
 export function Insights() {
-  const { getAggregatedContext, dataSources } = useProject();
+  const { getAggregatedContext, dataSources, pgdContent, specContent, setPgdContent, setSpecContent, addLog, activeModels, setActiveModels } = useProject();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -31,12 +78,106 @@ export function Insights() {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [provider, setProvider] = useState<AIProvider>('google');
+  const [provider1, setProvider1] = useState<AIProvider>((activeModels[0] as AIProvider) || 'gemini-3.1-pro');
+  const [provider2, setProvider2] = useState<AIProvider>((activeModels[1] as AIProvider) || 'gpt-5.4');
+  const [provider3, setProvider3] = useState<AIProvider>((activeModels[2] as AIProvider) || 'claude-opus-4.6');
+  const [activeSlots, setActiveSlots] = useState<number[]>(activeModels.length > 0 ? activeModels.map((_, i) => i + 1) : [1]);
+  const [showTokenWarning, setShowTokenWarning] = useState(false);
+  const [pendingSlot, setPendingSlot] = useState<number | null>(null);
+
+  useEffect(() => {
+    const currentActiveModels = activeSlots.map(slot => 
+      slot === 1 ? provider1 : slot === 2 ? provider2 : provider3
+    );
+    // Only update if different to avoid infinite loops
+    if (JSON.stringify(currentActiveModels) !== JSON.stringify(activeModels)) {
+      setActiveModels(currentActiveModels);
+    }
+  }, [activeSlots, provider1, provider2, provider3, activeModels, setActiveModels]);
+
+  const toggleSlot = (slot: number) => {
+    if (activeSlots.includes(slot)) {
+      if (activeSlots.length === 1) return; // Prevent deactivating all
+      setActiveSlots(prev => prev.filter(s => s !== slot));
+    } else {
+      if (activeSlots.length === 2) {
+        setPendingSlot(slot);
+        setShowTokenWarning(true);
+      } else {
+        setActiveSlots(prev => [...prev, slot]);
+      }
+    }
+  };
+
+  const confirmActivateAll = () => {
+    if (pendingSlot) {
+      setActiveSlots(prev => [...prev, pendingSlot]);
+    }
+    setShowTokenWarning(false);
+    setPendingSlot(null);
+  };
+
+  const cancelActivateAll = () => {
+    setShowTokenWarning(false);
+    setPendingSlot(null);
+  };
+
+  const [activeTab, setActiveTab] = useState<'chat' | 'pgd' | 'spec'>('chat');
+  const [localPgd, setLocalPgd] = useState(pgdContent);
+  const [localSpec, setLocalSpec] = useState(specContent);
+  const [isEditingPgd, setIsEditingPgd] = useState(false);
+  const [isEditingSpec, setIsEditingSpec] = useState(false);
+
+  useEffect(() => {
+    setLocalPgd(pgdContent);
+  }, [pgdContent]);
+
+  useEffect(() => {
+    setLocalSpec(specContent);
+  }, [specContent]);
+
+  const handleSavePgd = () => {
+    setPgdContent(localPgd);
+    setIsEditingPgd(false);
+    addLog('Updated Document', 'Saved changes to Product Goal Document (PGD.md)');
+  };
+
+  const handleSaveSpec = () => {
+    setSpecContent(localSpec);
+    setIsEditingSpec(false);
+    addLog('Updated Document', 'Saved changes to Specification Document (SPEC.md)');
+  };
+
+  const [openaiKey, setOpenaiKey] = useState(localStorage.getItem('nexus_openai_key') || '');
+  const [anthropicKey, setAnthropicKey] = useState(localStorage.getItem('nexus_anthropic_key') || '');
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
+
+  const handleOpenaiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setOpenaiKey(val);
+    if (val) localStorage.setItem('nexus_openai_key', val);
+    else localStorage.removeItem('nexus_openai_key');
+  };
+
+  const handleAnthropicKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setAnthropicKey(val);
+    if (val) localStorage.setItem('nexus_anthropic_key', val);
+    else localStorage.removeItem('nexus_anthropic_key');
+  };
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  const getActiveProviders = () => {
+    return activeSlots.map(slot => 
+      slot === 1 ? provider1 : slot === 2 ? provider2 : provider3
+    );
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -99,19 +240,29 @@ export function Insights() {
         return;
       }
 
-      const response = await generateProjectInsights(context, userMsg.content, provider);
-      
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: response
-      }]);
+      const activeProviders = getActiveProviders();
+      const promises = activeProviders.map(provider => 
+        generateProjectInsights(context, userMsg.content, provider)
+          .then(res => ({ provider, content: res, error: null }))
+          .catch(err => ({ provider, content: null, error: err }))
+      );
+
+      const results = await Promise.all(promises);
+
+      const newMessages = results.map((res, index) => ({
+        id: Date.now().toString() + '-' + index,
+        role: 'assistant' as const,
+        content: res.error ? "Sorry, I encountered an error while analyzing the data. Please ensure your API key is set correctly and try again." : res.content!,
+        provider: res.provider
+      }));
+
+      setMessages(prev => [...prev, ...newMessages]);
     } catch (error) {
       console.error(error);
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'assistant',
-        content: "Sorry, I encountered an error while analyzing the data. Please ensure your API key is set correctly and try again."
+        content: "Sorry, I encountered an error while analyzing the data."
       }]);
     } finally {
       setIsLoading(false);
@@ -135,13 +286,15 @@ export function Insights() {
       className="p-8 max-w-5xl mx-auto h-[calc(100vh-2rem)] flex flex-col"
     >
       <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 relative z-20">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">LLM Insights Engine</h2>
-          <p className="text-zinc-500 mt-2">Interact with Gemini to interpret your project's current state and historical context.</p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">LLM Insights Engine</h2>
+            <p className="text-zinc-500 mt-2">Interact with AI models to interpret your project's current state and historical context.</p>
+          </div>
         </div>
         
-        <div className="relative w-full md:w-80">
-          <div className="relative">
+        <div className="relative w-full md:w-80 flex gap-2">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
             <Input 
               placeholder="Search project context..." 
@@ -205,80 +358,302 @@ export function Insights() {
         </div>
       </div>
 
+      <div className="flex gap-2 mb-4">
+        <Button 
+          variant={activeTab === 'chat' ? 'default' : 'outline'} 
+          onClick={() => setActiveTab('chat')}
+        >
+          <Bot className="w-4 h-4 mr-2" />
+          AI Chat
+        </Button>
+        <Button 
+          variant={activeTab === 'pgd' ? 'default' : 'outline'} 
+          onClick={() => setActiveTab('pgd')}
+        >
+          <FileText className="w-4 h-4 mr-2" />
+          PGD.md
+        </Button>
+        <Button 
+          variant={activeTab === 'spec' ? 'default' : 'outline'} 
+          onClick={() => setActiveTab('spec')}
+        >
+          <FileText className="w-4 h-4 mr-2" />
+          SPEC.md
+        </Button>
+      </div>
+
       <Card className="flex-1 flex flex-col overflow-hidden border-zinc-200 dark:border-zinc-800 shadow-md relative z-10">
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-zinc-50/30 dark:bg-zinc-950/30">
-          {messages.map((msg) => (
-            <div 
-              key={msg.id} 
-              className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
-            >
-              <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${
-                msg.role === 'user' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300'
-              }`}>
-                {msg.role === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-              </div>
-              <div className={`flex-1 px-4 py-3 rounded-2xl max-w-[80%] ${
-                msg.role === 'user' 
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-tr-sm' 
-                  : 'bg-white border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 rounded-tl-sm shadow-sm'
-              }`}>
-                {msg.role === 'user' ? (
-                  <p className="text-sm">{msg.content}</p>
-                ) : (
-                  <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-zinc-950 prose-pre:text-zinc-50">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+        {activeTab === 'chat' && (
+          <>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-zinc-50/30 dark:bg-zinc-950/30">
+              {messages.map((msg) => (
+                <div 
+                  key={msg.id} 
+                  className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+                >
+                  <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${
+                    msg.role === 'user' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300'
+                  }`}>
+                    {msg.role === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
                   </div>
-                )}
+                  <div className={`flex-1 px-4 py-3 rounded-2xl ${msg.role === 'user' ? 'max-w-[80%]' : 'w-full'} ${
+                    msg.role === 'user' 
+                      ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-tr-sm' 
+                      : 'bg-white border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 rounded-tl-sm shadow-sm'
+                  }`}>
+                    {msg.role === 'user' ? (
+                      <p className="text-sm">{msg.content}</p>
+                    ) : (
+                      <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-transparent prose-pre:p-0">
+                        {msg.provider && (
+                          <div className="text-xs font-semibold text-zinc-500 mb-2 uppercase border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                            {msg.provider}
+                          </div>
+                        )}
+                        <ReactMarkdown components={{ code: CodeBlock }}>{msg.content}</ReactMarkdown>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {isLoading && (
+                <div className="flex gap-4">
+                  <div className="flex-shrink-0 h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 flex items-center justify-center">
+                    <Bot className="h-4 w-4" />
+                  </div>
+                  <div className="px-4 py-3 rounded-2xl bg-white border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 rounded-tl-sm shadow-sm flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+                    <span className="text-sm text-zinc-500">Analyzing context with {activeSlots.length} model{activeSlots.length > 1 ? 's' : ''}...</span>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+            
+            <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+              <div className="flex gap-4 mb-4">
+                {[1, 2, 3].map((slot) => (
+                  <div 
+                    key={slot}
+                    onClick={() => toggleSlot(slot)}
+                    className={`flex-1 p-3 rounded-lg border cursor-pointer transition-all ${
+                      activeSlots.includes(slot) 
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
+                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Slot {slot}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-500">Modell on/off</span>
+                        <input 
+                          type="checkbox" 
+                          checked={activeSlots.includes(slot)} 
+                          onChange={() => toggleSlot(slot)} 
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-3.5 w-3.5 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800"
+                        />
+                      </div>
+                    </div>
+                    <select
+                      value={slot === 1 ? provider1 : slot === 2 ? provider2 : provider3}
+                      onChange={(e) => {
+                        const val = e.target.value as AIProvider;
+                        if (slot === 1) setProvider1(val);
+                        else if (slot === 2) setProvider2(val);
+                        else setProvider3(val);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full px-2 py-1 bg-transparent border-none text-sm font-medium focus:outline-none focus:ring-0 cursor-pointer"
+                      disabled={isLoading}
+                    >
+                      <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
+                      <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
+                      <option value="gpt-5.4">OpenAI GPT 5.4</option>
+                      <option value="claude-opus-4.6">Claude Opus 4.6</option>
+                      <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
+                    </select>
+                    {(() => {
+                      const currentProv = slot === 1 ? provider1 : slot === 2 ? provider2 : provider3;
+                      if (currentProv === 'gpt-5.4') {
+                        return (
+                          <div className="mt-2 relative" onClick={(e) => e.stopPropagation()}>
+                            <Input
+                              type={showOpenaiKey ? "text" : "password"}
+                              placeholder="OpenAI API Key (sk-...)"
+                              value={openaiKey}
+                              onChange={handleOpenaiKeyChange}
+                              className="text-xs h-8 pr-8"
+                            />
+                            <button 
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setShowOpenaiKey(!showOpenaiKey); }}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                            >
+                              {showOpenaiKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            </button>
+                          </div>
+                        );
+                      }
+                      if (currentProv === 'claude-opus-4.6' || currentProv === 'claude-sonnet-4.6') {
+                        return (
+                          <div className="mt-2 relative" onClick={(e) => e.stopPropagation()}>
+                            <Input
+                              type={showAnthropicKey ? "text" : "password"}
+                              placeholder="Anthropic API Key (sk-ant-...)"
+                              value={anthropicKey}
+                              onChange={handleAnthropicKeyChange}
+                              className="text-xs h-8 pr-8"
+                            />
+                            <button 
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setShowAnthropicKey(!showAnthropicKey); }}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                            >
+                              {showAnthropicKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            </button>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                ))}
+              </div>
+              <form 
+                onSubmit={(e) => { e.preventDefault(); handleSend(); }}
+                className="flex gap-2"
+              >
+                <Input 
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={`Ask ${activeSlots.length} active model${activeSlots.length > 1 ? 's' : ''} about project status, data structures, or recent changes...`}
+                  className="flex-1"
+                  disabled={isLoading}
+                />
+                <Button type="submit" disabled={isLoading || !input.trim()}>
+                  <Send className="h-4 w-4" />
+                </Button>
+              </form>
+              <div className="mt-2 text-center">
+                <p className="text-xs text-zinc-400">
+                  Context size: {dataSources.length} sources loaded. {activeSlots.length} model{activeSlots.length > 1 ? 's' : ''} will use this data to answer.
+                </p>
               </div>
             </div>
-          ))}
-          {isLoading && (
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 flex items-center justify-center">
-                <Bot className="h-4 w-4" />
-              </div>
-              <div className="px-4 py-3 rounded-2xl bg-white border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800 rounded-tl-sm shadow-sm flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
-                <span className="text-sm text-zinc-500">Analyzing context...</span>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+          </>
+        )}
         
-        <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
-          <form 
-            onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-            className="flex gap-2"
-          >
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as AIProvider)}
-              className="px-3 py-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={isLoading}
-            >
-              <option value="google">Google Gemini</option>
-              <option value="openai">OpenAI GPT-4o</option>
-              <option value="anthropic">Anthropic Claude</option>
-            </select>
-            <Input 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about project status, data structures, or recent changes..."
-              className="flex-1"
-              disabled={isLoading}
-            />
-            <Button type="submit" disabled={isLoading || !input.trim()}>
-              <Send className="h-4 w-4" />
-            </Button>
-          </form>
-          <div className="mt-2 text-center">
-            <p className="text-xs text-zinc-400">
-              Context size: {dataSources.length} sources loaded. {provider === 'google' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : 'Claude'} will use this data to answer.
-            </p>
+        {activeTab === 'pgd' && (
+          <div className="flex-1 flex flex-col overflow-hidden p-6 bg-white dark:bg-zinc-950">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">Product Goal Document (PGD.md)</h3>
+                <p className="text-sm text-zinc-500">Define the high-level goals and vision for your product.</p>
+              </div>
+              {isEditingPgd ? (
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => { setLocalPgd(pgdContent); setIsEditingPgd(false); }}>Cancel</Button>
+                  <Button onClick={handleSavePgd}><Save className="w-4 h-4 mr-2" /> Save</Button>
+                </div>
+              ) : (
+                <Button onClick={() => setIsEditingPgd(true)}><FileEdit className="w-4 h-4 mr-2" /> Edit</Button>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto border rounded-md border-zinc-200 dark:border-zinc-800">
+              {isEditingPgd ? (
+                <Textarea 
+                  value={localPgd} 
+                  onChange={(e) => setLocalPgd(e.target.value)} 
+                  className="w-full h-full min-h-[400px] p-4 font-mono text-sm resize-none border-none focus-visible:ring-0"
+                  placeholder="# Product Goal Document\n\nEnter your product goals here..."
+                />
+              ) : (
+                <div className="p-6 prose prose-sm dark:prose-invert max-w-none">
+                  {pgdContent ? <ReactMarkdown>{pgdContent}</ReactMarkdown> : <p className="text-zinc-500 italic">No content yet. Click Edit to add product goals.</p>}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
+
+        {activeTab === 'spec' && (
+          <div className="flex-1 flex flex-col overflow-hidden p-6 bg-white dark:bg-zinc-950">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">Specification Document (SPEC.md)</h3>
+                <p className="text-sm text-zinc-500">Define the technical specifications and requirements.</p>
+              </div>
+              {isEditingSpec ? (
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => { setLocalSpec(specContent); setIsEditingSpec(false); }}>Cancel</Button>
+                  <Button onClick={handleSaveSpec}><Save className="w-4 h-4 mr-2" /> Save</Button>
+                </div>
+              ) : (
+                <Button onClick={() => setIsEditingSpec(true)}><FileEdit className="w-4 h-4 mr-2" /> Edit</Button>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto border rounded-md border-zinc-200 dark:border-zinc-800">
+              {isEditingSpec ? (
+                <Textarea 
+                  value={localSpec} 
+                  onChange={(e) => setLocalSpec(e.target.value)} 
+                  className="w-full h-full min-h-[400px] p-4 font-mono text-sm resize-none border-none focus-visible:ring-0"
+                  placeholder="# Specification Document\n\nEnter your technical specifications here..."
+                />
+              ) : (
+                <div className="p-6 prose prose-sm dark:prose-invert max-w-none">
+                  {specContent ? <ReactMarkdown>{specContent}</ReactMarkdown> : <p className="text-zinc-500 italic">No content yet. Click Edit to add specifications.</p>}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </Card>
+
+      {/* Token Warning Modal */}
+      <AnimatePresence>
+        {showTokenWarning && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
+              onClick={cancelActivateAll}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-zinc-950 rounded-xl shadow-2xl z-50 border border-zinc-200 dark:border-zinc-800 overflow-hidden"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">High Token Usage Warning</h3>
+                  <button 
+                    onClick={cancelActivateAll}
+                    className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-6">
+                  Are you sure you want to activate all 3 models? This will send the entire project context to 3 different models simultaneously, which will result in high token usage and potentially higher costs.
+                </p>
+                <div className="flex justify-end gap-3">
+                  <Button variant="outline" onClick={cancelActivateAll}>
+                    Cancel
+                  </Button>
+                  <Button onClick={confirmActivateAll} className="bg-blue-600 hover:bg-blue-700 text-white">
+                    Activate All
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

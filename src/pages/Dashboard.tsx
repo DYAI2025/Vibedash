@@ -1,26 +1,60 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useProject } from '@/src/store/ProjectContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/src/components/ui/card';
-import { Activity, Database, FileText, GitCommit, Github } from 'lucide-react';
-import { formatDistanceToNow, format } from 'date-fns';
+import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
+import { Activity, Database, GitCommit, Clock, Github, ListTodo } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ChatTerminal } from '@/src/components/dashboard/ChatTerminal';
+
+interface Commit {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+}
 
 export function Dashboard() {
-  const { dataSources, logs } = useProject();
+  const { dataSources, logs, developmentOrders } = useProject();
+  const [commits, setCommits] = useState<Commit[]>([]);
+  const [isLoadingCommits, setIsLoadingCommits] = useState(true);
 
-  const githubSource = dataSources.find(s => s.name.endsWith('-github.json'));
-  let githubCommits: any[] = [];
-  if (githubSource) {
-    try {
-      const parsed = JSON.parse(githubSource.rawContent);
-      if (parsed.commits && Array.isArray(parsed.commits)) {
-        githubCommits = parsed.commits.slice(0, 3);
+  useEffect(() => {
+    // Simulate fetching commits from a connected GitHub repository
+    const fetchCommits = async () => {
+      setIsLoadingCommits(true);
+      try {
+        // In a real app, this would be an API call to GitHub
+        // For now, we'll simulate a delay and return mock data
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        setCommits([
+          {
+            sha: 'a1b2c3d',
+            message: 'Update AI chat component with Monaco editor',
+            author: 'Developer',
+            date: new Date(Date.now() - 1000 * 60 * 30).toISOString() // 30 mins ago
+          },
+          {
+            sha: 'e4f5g6h',
+            message: 'Fix syntax highlighting in Insights',
+            author: 'Developer',
+            date: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString() // 2 hours ago
+          },
+          {
+            sha: 'i7j8k9l',
+            message: 'Initial commit',
+            author: 'Developer',
+            date: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString() // 1 day ago
+          }
+        ]);
+      } catch (error) {
+        console.error('Failed to fetch commits:', error);
+      } finally {
+        setIsLoadingCommits(false);
       }
-    } catch (e) {
-      console.error("Failed to parse github source", e);
-    }
-  }
+    };
+
+    fetchCommits();
+  }, []);
 
   const stats = [
     {
@@ -43,29 +77,31 @@ export function Dashboard() {
     }
   ];
 
-  // Generate some mock activity data for the chart based on logs or just mock data if empty
-  const chartData = logs.length > 0 
-    ? logs.slice(0, 10).reverse().map((log, i) => ({
-        name: format(log.timestamp, 'HH:mm'),
-        activity: i + 1
-      }))
-    : Array.from({ length: 7 }).map((_, i) => ({
-        name: `${i}:00`,
-        activity: Math.floor(Math.random() * 10)
-      }));
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
+  };
 
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-8 max-w-7xl mx-auto space-y-8"
+      className="p-8 max-w-[1600px] mx-auto space-y-8"
     >
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Project Dashboard</h2>
-        <p className="text-zinc-500 mt-2">Overview of your project's data context and recent changes.</p>
+        <p className="text-zinc-500 mt-2">Overview of your project's data context and AI workspace.</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         {stats.map((stat, i) => (
           <Card key={i}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -82,116 +118,142 @@ export function Dashboard() {
             </CardContent>
           </Card>
         ))}
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4">
-          <CardHeader>
-            <CardTitle>Activity Overview</CardTitle>
-            <CardDescription>
-              Pipeline activity and data updates over time.
-            </CardDescription>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Dev Orders
+            </CardTitle>
+            <ListTodo className="h-4 w-4 text-zinc-500" />
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] w-full mt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={chartData}
-                  margin={{
-                    top: 10,
-                    right: 30,
-                    left: 0,
-                    bottom: 0,
-                  }}
-                >
-                  <defs>
-                    <linearGradient id="colorActivity" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#18181b" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#18181b" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#71717a' }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#71717a' }} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '8px', border: '1px solid #e4e4e7', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Area type="monotone" dataKey="activity" stroke="#18181b" strokeWidth={2} fillOpacity={1} fill="url(#colorActivity)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <div className="text-2xl font-bold">{developmentOrders.length}</div>
+            <p className="text-xs text-zinc-500 mt-1">
+              Pending tasks
+            </p>
           </CardContent>
         </Card>
+      </div>
 
-        <div className="col-span-3 flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Logs</CardTitle>
-              <CardDescription>
-                Recent pipeline events and updates.
-              </CardDescription>
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <ChatTerminal />
+        </div>
+        
+        <div className="space-y-4">
+          <Card className="h-[340px] flex flex-col">
+            <CardHeader className="pb-3 shrink-0">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Activity className="h-5 w-5 text-blue-500" />
+                Recent Logs
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                {logs.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-48 text-zinc-500 border-2 border-dashed rounded-lg border-zinc-200 dark:border-zinc-800">
-                    <Activity className="h-8 w-8 mb-2 opacity-50" />
-                    <p className="text-sm">No recent activity.</p>
-                  </div>
-                ) : (
-                  logs.slice(0, 5).map((log) => (
-                    <div key={log.id} className="flex items-start gap-4">
-                      <div className="mt-0.5 p-1.5 bg-zinc-100 rounded-full dark:bg-zinc-800">
-                        <Activity className="h-3 w-3 text-zinc-600 dark:text-zinc-400" />
+            <CardContent className="flex-1 overflow-y-auto pr-2">
+              <div className="space-y-4">
+                {logs.length > 0 ? (
+                  [...logs].reverse().slice(0, 10).map((log, i) => (
+                    <div key={i} className="flex gap-3 items-start">
+                      <div className="mt-0.5 bg-zinc-100 dark:bg-zinc-800 p-1.5 rounded-md">
+                        <Clock className="h-3.5 w-3.5 text-zinc-500" />
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium leading-none">{log.action}</p>
-                        <p className="text-sm text-zinc-500">{log.details}</p>
-                        <p className="text-xs text-zinc-400">
-                          {formatDistanceToNow(log.timestamp, { addSuffix: true })}
+                      <div>
+                        <p className="text-sm font-medium">{log.action}</p>
+                        <p className="text-xs text-zinc-500">{log.details}</p>
+                        <p className="text-[10px] text-zinc-400 mt-1">
+                          {new Date(log.timestamp).toLocaleTimeString()}
                         </p>
                       </div>
                     </div>
                   ))
+                ) : (
+                  <div className="text-sm text-zinc-500 italic text-center py-8">
+                    No recent activity logs.
+                  </div>
                 )}
               </div>
             </CardContent>
           </Card>
 
-          {githubCommits.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Github className="h-5 w-5" />
-                  Recent Commits
-                </CardTitle>
-                <CardDescription>Latest updates from connected repository</CardDescription>
-              </CardHeader>
-              <CardContent>
+          <Card className="h-[344px] flex flex-col">
+            <CardHeader className="pb-3 shrink-0">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Github className="h-5 w-5 text-zinc-700 dark:text-zinc-300" />
+                Latest Commits
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto pr-2">
+              {isLoadingCommits ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-zinc-500"></div>
+                </div>
+              ) : commits.length > 0 ? (
                 <div className="space-y-4">
-                  {githubCommits.map((commit: any, i: number) => (
-                    <div key={i} className="flex flex-col gap-1.5 border-b border-zinc-100 dark:border-zinc-800 last:border-0 pb-3 last:pb-0">
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-sm font-medium truncate" title={commit.message}>{commit.message}</span>
-                        <span className="text-xs font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-400 shrink-0">{commit.sha.substring(0, 7)}</span>
+                  {commits.map((commit, i) => (
+                    <div key={i} className="flex gap-3 items-start border-b border-zinc-100 dark:border-zinc-800 last:border-0 pb-3 last:pb-0">
+                      <div className="mt-0.5 bg-zinc-100 dark:bg-zinc-800 p-1.5 rounded-md">
+                        <GitCommit className="h-3.5 w-3.5 text-zinc-500" />
                       </div>
-                      <div className="flex items-center justify-between text-xs text-zinc-500">
-                        <span className="flex items-center gap-1.5">
-                          <div className="w-4 h-4 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-600 dark:text-zinc-400">
-                            {commit.author.charAt(0).toUpperCase()}
-                          </div>
-                          {commit.author}
-                        </span>
-                        <span>{formatDistanceToNow(new Date(commit.date), { addSuffix: true })}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium truncate" title={commit.message}>
+                            {commit.message}
+                          </p>
+                          <span className="text-xs font-mono text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+                            {commit.sha}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-xs text-zinc-500">{commit.author}</p>
+                          <p className="text-[10px] text-zinc-400">
+                            {formatDate(commit.date)}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <div className="text-sm text-zinc-500 italic text-center py-8">
+                  No commits found. Connect a repository to see history.
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
+
+      {developmentOrders.length > 0 && (
+        <div className="pt-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold flex items-center gap-2">
+              <ListTodo className="h-5 w-5 text-emerald-500" />
+              Development Orders
+            </h3>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {developmentOrders.map((order) => (
+              <Card key={order.id} className="border-l-4 border-l-emerald-500 dark:border-l-emerald-600">
+                <CardHeader className="pb-2">
+                  <div className="flex justify-between items-start gap-2">
+                    <CardTitle className="text-base leading-tight">{order.title}</CardTitle>
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${
+                      order.status === 'completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                      order.status === 'in-progress' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                      'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                    }`}>
+                      {order.status}
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-zinc-500 line-clamp-3" title={order.description}>
+                    {order.description}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }
