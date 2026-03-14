@@ -544,7 +544,7 @@ export function DataSources() {
                 onChange={(e) => setSelectedModelForOrders(e.target.value)}
                 className="text-sm bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded px-2 py-1"
               >
-                {activeModels.map(model => (
+                {Array.from(new Set(activeModels)).map(model => (
                   <option key={model} value={model}>{model}</option>
                 ))}
               </select>

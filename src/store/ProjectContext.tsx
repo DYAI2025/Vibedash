@@ -59,6 +59,10 @@ interface ProjectContextType {
   setActiveModels: (models: string[]) => void;
   developmentOrders: DevelopmentOrder[];
   setDevelopmentOrders: (orders: DevelopmentOrder[]) => void;
+  hasOpenAIKey: boolean;
+  hasAnthropicKey: boolean;
+  setHasOpenAIKey: (hasKey: boolean) => void;
+  setHasAnthropicKey: (hasKey: boolean) => void;
 }
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -105,6 +109,31 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [specContent, setSpecContent] = useState<string>('');
   const [activeModels, setActiveModels] = useState<string[]>(['gemini-3.1-pro']);
   const [developmentOrders, setDevelopmentOrders] = useState<DevelopmentOrder[]>([]);
+  const [hasOpenAIKey, setHasOpenAIKey] = useState<boolean>(() => !!localStorage.getItem('nexus_openai_key'));
+  const [hasAnthropicKey, setHasAnthropicKey] = useState<boolean>(() => !!localStorage.getItem('nexus_anthropic_key'));
+  
+  // Filter active models based on available keys
+  useEffect(() => {
+    setActiveModels(prev => {
+      const filtered = prev.filter(model => {
+        if (model.startsWith('gpt-')) return hasOpenAIKey;
+        if (model.startsWith('claude-')) return hasAnthropicKey;
+        return true; // Gemini is always available
+      });
+      
+      // If all models were filtered out, fallback to Gemini
+      if (filtered.length === 0) {
+        return ['gemini-3.1-pro'];
+      }
+      
+      // Only update if the array actually changed
+      if (filtered.length !== prev.length || !filtered.every((v, i) => v === prev[i])) {
+        return filtered;
+      }
+      return prev;
+    });
+  }, [hasOpenAIKey, hasAnthropicKey]);
+
   const [templates, setTemplates] = useState<ProjectTemplate[]>(() => {
     const saved = localStorage.getItem('nexus_templates');
     if (saved) {
@@ -291,7 +320,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       pgdContent, setPgdContent, specContent, setSpecContent,
       templates, saveAsTemplate, loadTemplate, deleteTemplate,
       activeModels, setActiveModels,
-      developmentOrders, setDevelopmentOrders
+      developmentOrders, setDevelopmentOrders,
+      hasOpenAIKey, hasAnthropicKey,
+      setHasOpenAIKey, setHasAnthropicKey
     }}>
       {children}
     </ProjectContext.Provider>

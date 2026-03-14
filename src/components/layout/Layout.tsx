@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Database, BrainCircuit, Blocks, Settings, Terminal, X, Activity, Library } from 'lucide-react';
+import { LayoutDashboard, Database, BrainCircuit, Blocks, Settings, Terminal, X, Activity, Library, ListTodo } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
+import { TasksPanel } from '@/src/components/dashboard/TasksPanel';
+import { useProject } from '@/src/store/ProjectContext';
 
 export function Layout() {
+  const { setHasOpenAIKey, setHasAnthropicKey } = useProject();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isTasksOpen, setIsTasksOpen] = useState(false);
   const [openaiKeyInput, setOpenaiKeyInput] = useState('');
   const [anthropicKeyInput, setAnthropicKeyInput] = useState('');
 
@@ -21,14 +25,18 @@ export function Layout() {
   const saveApiKeys = () => {
     if (openaiKeyInput.trim()) {
       localStorage.setItem('nexus_openai_key', openaiKeyInput.trim());
+      setHasOpenAIKey(true);
     } else {
       localStorage.removeItem('nexus_openai_key');
+      setHasOpenAIKey(false);
     }
 
     if (anthropicKeyInput.trim()) {
       localStorage.setItem('nexus_anthropic_key', anthropicKeyInput.trim());
+      setHasAnthropicKey(true);
     } else {
       localStorage.removeItem('nexus_anthropic_key');
+      setHasAnthropicKey(false);
     }
     setIsSettingsOpen(false);
   };
@@ -77,7 +85,14 @@ export function Layout() {
           ))}
         </nav>
         
-        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800">
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
+          <button 
+            onClick={() => setIsTasksOpen(true)}
+            className="flex items-center gap-3 px-3 py-2 w-full rounded-md text-sm font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 transition-colors dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+          >
+            <ListTodo className="h-4 w-4" />
+            Project Tasks
+          </button>
           <button 
             onClick={() => setIsSettingsOpen(true)}
             className="flex items-center gap-3 px-3 py-2 w-full rounded-md text-sm font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 transition-colors dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
@@ -92,6 +107,9 @@ export function Layout() {
       <main className="flex-1 overflow-auto">
         <Outlet />
       </main>
+
+      {/* Tasks Panel */}
+      <TasksPanel isOpen={isTasksOpen} onClose={() => setIsTasksOpen(false)} />
 
       {/* Settings Modal */}
       <AnimatePresence>

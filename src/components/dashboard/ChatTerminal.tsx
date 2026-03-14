@@ -81,6 +81,8 @@ export function ChatTerminal() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [fileTree, setFileTree] = useState<FileNode[]>(initialFiles);
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
@@ -211,6 +213,11 @@ export function ChatTerminal() {
     } else {
       output = `Command not found: ${cmd}`;
     }
+
+    if (commandStr.trim()) {
+      setCommandHistory(prev => [...prev, commandStr]);
+    }
+    setHistoryIndex(-1);
 
     const newTerminalOutput = activeSession.terminalOutput + (activeSession.terminalOutput ? '\n' : '') + `${activeSession.currentPath} $ ${commandStr}` + (output ? '\n' + output : '');
     updateSession(activeSessionId, { 
@@ -481,6 +488,27 @@ export function ChatTerminal() {
                         const val = e.currentTarget.value;
                         executeCommand(val);
                         e.currentTarget.value = '';
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        if (commandHistory.length > 0) {
+                          const newIndex = historyIndex === -1 
+                            ? commandHistory.length - 1 
+                            : Math.max(0, historyIndex - 1);
+                          setHistoryIndex(newIndex);
+                          e.currentTarget.value = commandHistory[newIndex];
+                        }
+                      } else if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (historyIndex !== -1) {
+                          const newIndex = historyIndex + 1;
+                          if (newIndex >= commandHistory.length) {
+                            setHistoryIndex(-1);
+                            e.currentTarget.value = '';
+                          } else {
+                            setHistoryIndex(newIndex);
+                            e.currentTarget.value = commandHistory[newIndex];
+                          }
+                        }
                       }
                     }}
                   />

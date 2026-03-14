@@ -68,7 +68,7 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
 };
 
 export function Insights() {
-  const { getAggregatedContext, dataSources, pgdContent, specContent, setPgdContent, setSpecContent, addLog, activeModels, setActiveModels } = useProject();
+  const { getAggregatedContext, dataSources, pgdContent, specContent, setPgdContent, setSpecContent, addLog, activeModels, setActiveModels, hasOpenAIKey, hasAnthropicKey } = useProject();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -79,11 +79,24 @@ export function Insights() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [provider1, setProvider1] = useState<AIProvider>((activeModels[0] as AIProvider) || 'gemini-3.1-pro');
-  const [provider2, setProvider2] = useState<AIProvider>((activeModels[1] as AIProvider) || 'gpt-5.4');
-  const [provider3, setProvider3] = useState<AIProvider>((activeModels[2] as AIProvider) || 'claude-opus-4.6');
+  const [provider2, setProvider2] = useState<AIProvider>((activeModels[1] as AIProvider) || (hasOpenAIKey ? 'gpt-5.4' : 'gemini-3.1-pro'));
+  const [provider3, setProvider3] = useState<AIProvider>((activeModels[2] as AIProvider) || (hasAnthropicKey ? 'claude-opus-4.6' : 'gemini-3.1-pro'));
   const [activeSlots, setActiveSlots] = useState<number[]>(activeModels.length > 0 ? activeModels.map((_, i) => i + 1) : [1]);
   const [showTokenWarning, setShowTokenWarning] = useState(false);
   const [pendingSlot, setPendingSlot] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!hasOpenAIKey) {
+      if (provider1.startsWith('gpt-')) setProvider1('gemini-3.1-pro');
+      if (provider2.startsWith('gpt-')) setProvider2('gemini-3.1-pro');
+      if (provider3.startsWith('gpt-')) setProvider3('gemini-3.1-pro');
+    }
+    if (!hasAnthropicKey) {
+      if (provider1.startsWith('claude-')) setProvider1('gemini-3.1-pro');
+      if (provider2.startsWith('claude-')) setProvider2('gemini-3.1-pro');
+      if (provider3.startsWith('claude-')) setProvider3('gemini-3.1-pro');
+    }
+  }, [hasOpenAIKey, hasAnthropicKey, provider1, provider2, provider3]);
 
   useEffect(() => {
     const currentActiveModels = activeSlots.map(slot => 
@@ -146,25 +159,6 @@ export function Insights() {
     setSpecContent(localSpec);
     setIsEditingSpec(false);
     addLog('Updated Document', 'Saved changes to Specification Document (SPEC.md)');
-  };
-
-  const [openaiKey, setOpenaiKey] = useState(localStorage.getItem('nexus_openai_key') || '');
-  const [anthropicKey, setAnthropicKey] = useState(localStorage.getItem('nexus_anthropic_key') || '');
-  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
-  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
-
-  const handleOpenaiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setOpenaiKey(val);
-    if (val) localStorage.setItem('nexus_openai_key', val);
-    else localStorage.removeItem('nexus_openai_key');
-  };
-
-  const handleAnthropicKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setAnthropicKey(val);
-    if (val) localStorage.setItem('nexus_anthropic_key', val);
-    else localStorage.removeItem('nexus_anthropic_key');
   };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -469,54 +463,14 @@ export function Insights() {
                     >
                       <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
                       <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
-                      <option value="gpt-5.4">OpenAI GPT 5.4</option>
-                      <option value="claude-opus-4.6">Claude Opus 4.6</option>
-                      <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
+                      {hasOpenAIKey && <option value="gpt-5.4">OpenAI GPT 5.4</option>}
+                      {hasAnthropicKey && (
+                        <>
+                          <option value="claude-opus-4.6">Claude Opus 4.6</option>
+                          <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
+                        </>
+                      )}
                     </select>
-                    {(() => {
-                      const currentProv = slot === 1 ? provider1 : slot === 2 ? provider2 : provider3;
-                      if (currentProv === 'gpt-5.4') {
-                        return (
-                          <div className="mt-2 relative" onClick={(e) => e.stopPropagation()}>
-                            <Input
-                              type={showOpenaiKey ? "text" : "password"}
-                              placeholder="OpenAI API Key (sk-...)"
-                              value={openaiKey}
-                              onChange={handleOpenaiKeyChange}
-                              className="text-xs h-8 pr-8"
-                            />
-                            <button 
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setShowOpenaiKey(!showOpenaiKey); }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-                            >
-                              {showOpenaiKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                            </button>
-                          </div>
-                        );
-                      }
-                      if (currentProv === 'claude-opus-4.6' || currentProv === 'claude-sonnet-4.6') {
-                        return (
-                          <div className="mt-2 relative" onClick={(e) => e.stopPropagation()}>
-                            <Input
-                              type={showAnthropicKey ? "text" : "password"}
-                              placeholder="Anthropic API Key (sk-ant-...)"
-                              value={anthropicKey}
-                              onChange={handleAnthropicKeyChange}
-                              className="text-xs h-8 pr-8"
-                            />
-                            <button 
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setShowAnthropicKey(!showAnthropicKey); }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-                            >
-                              {showAnthropicKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                            </button>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
                   </div>
                 ))}
               </div>
